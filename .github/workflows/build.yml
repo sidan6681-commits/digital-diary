@@ -1,0 +1,58 @@
+name: Build APK
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Prepare web files for the app
+        run: |
+          mkdir -p www
+          cp index.html www/index.html
+          python3 - <<'PY'
+          p = 'www/index.html'
+          s = open(p, encoding='utf-8').read()
+
+          a = 'try{var a=document.createElement("a");a.href=URL.createObjectURL(new Blob([text]'
+          b = 'try{var C=window.Capacitor;if(C&&C.isNativePlatform&&C.isNativePlatform()){var w=await C.Plugins.Filesystem.writeFile({path:fn,data:text,directory:"CACHE",encoding:"utf8"});await C.Plugins.Share.share({title:fn,url:w.uri});smsg("Backup ready: "+n+" item(s).");return}}catch(e){smsg(/cancel/i.test(String(e&&e.message))?"Export cancelled.":"Export failed.");return}' + a
+          assert a in s, 'export code not found'
+          s = s.replace(a, b)
+
+          c = 'var a=document.createElement("a");a.href=url;a.target="_blank";a.rel="noopener";document.body.appendChild(a);a.click();a.remove();smsg("Opening Google Calendar...");'
+          d = 'if(window.Capacitor&&Capacitor.isNativePlatform&&Capacitor.isNativePlatform()){window.location.href=url}else{var a=document.createElement("a");a.href=url;a.target="_blank";a.rel="noopener";document.body.appendChild(a);a.click();a.remove()}smsg("Opening Google Calendar...");'
+          assert c in s, 'calendar code not found'
+          s = s.replace(c, d)
+
+          open(p, 'w', encoding='utf-8').write(s)
+          PY
+
+      - name: Create Android project and build
+        run: |
+          npm init -y
+          npm install @capacitor/core@7 @capacitor/cli@7 @capacitor/android@7 @capacitor/filesystem@7 @capacitor/share@7
+          npx cap init "Digital Diary" com.digitaldiary.app --web-dir=www
+          npx cap add android
+          npx cap sync android
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: DigitalDiary-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
